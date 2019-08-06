@@ -9,23 +9,6 @@ import (
 	"github.com/marcusolsson/tui-go"
 )
 
-type post struct {
-	// username string
-	// message  string
-	line string
-}
-
-// var posts = []post{
-// 	{username: "john", message: "hi, what's up?", time: "14:41"},
-// 	{username: "jane", message: "not much", time: "14:43"},
-// }
-
-var textTestInput = "123456789_123456789_123456789_123456789_123456789_123456789_123456789_123456789_"
-
-var _posts = []post{
-	// {line: "jane"},
-}
-
 // ADVANCE ...
 const ADVANCE int = 30
 
@@ -52,7 +35,8 @@ func readLines(path string) ([]string, error) {
 	var lines []string
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
+		line := scanner.Text()
+		lines = append(lines, line)
 	}
 	return lines, scanner.Err()
 }
@@ -83,7 +67,8 @@ func putText(box *tui.Box, content *[]string) {
 	clearBox(box, len(*content))
 	for _, txt := range *content {
 		box.Append(tui.NewHBox(
-			tui.NewLabel(txt),
+			//tui.New
+			tui.NewLabel(fmt.Sprintf("<%s>", txt)),
 			tui.NewSpacer(),
 		))
 	}
@@ -152,12 +137,7 @@ func main() {
 	// })
 
 	someChunk := getChunk(&fileContent, from, to)
-	for _, txt := range someChunk {
-		history.Append(tui.NewHBox(
-			tui.NewLabel(txt),
-			tui.NewSpacer(),
-		))
-	}
+	putText(history, &someChunk)
 
 	root := tui.NewHBox(sidebar, chat)
 
@@ -168,13 +148,18 @@ func main() {
 
 	// down ...
 	ui.SetKeybinding("j", func() {
+		input.SetText("")
 		if from < len(fileContent) {
 			from++
 		}
 
-		if from >= len(fileContent) {
-			ui.Quit()
-			fmt.Println("We are done ... ")
+		// if from >= len(fileContent) {
+		// 	ui.Quit()
+		// 	fmt.Println("We are done ... ")
+		// 	return
+		// }
+
+		if to >= len(fileContent) {
 			return
 		}
 
@@ -185,6 +170,7 @@ func main() {
 		// fmt.Printf("(%s)\n", getChunk(&fileContent, from, to))
 		chunk := getChunk(&fileContent, from, to)
 		putText(history, &chunk)
+		input.SetText("")
 	})
 
 	// up ...
