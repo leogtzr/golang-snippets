@@ -2,9 +2,12 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/marcusolsson/tui-go"
@@ -13,9 +16,13 @@ import (
 // ADVANCE ...
 const Advance int = 30
 const WrapMax = 80
+const GotoWidgetIndex = 2
 
 var from = 0
 var to = Advance
+var gotoLine = ""
+var fileToOpen = flag.String("file", "", "File to open")
+var openLatestFile = flag.Bool("latest", false, "Open the latest text file")
 
 func check(e error) {
 	if e != nil {
@@ -123,32 +130,104 @@ func wrap(line string) string {
 	if numberOfWords == 1 || numberOfWords == 0 {
 		return line
 	}
-	return fmt.Sprintf("<%s>", strings.Join(fields, strings.Repeat(" ", wrapLength/(numberOfWords-1))))
+	return fmt.Sprintf("%s", strings.Join(fields, strings.Repeat(" ", wrapLength/(numberOfWords-1))))
+}
+
+func getStatusInformation(fileContent *[]string) string {
+	return fmt.Sprintf("%d of %d%%                                   ", to, len(*fileContent))
 }
 
 func addUpBinding(fileContent *[]string, box *tui.Box, input *tui.Entry) func() {
 	return func() {
 		upText(fileContent, box)
-		input.SetText(fmt.Sprintf("%d of %d%%                                   ", to, len(*fileContent)))
+		input.SetText(getStatusInformation(fileContent))
 	}
 }
 
 func addDownBinding(fileContent *[]string, box *tui.Box, input *tui.Entry) func() {
 	return func() {
 		downText(fileContent, box)
-		input.SetText(fmt.Sprintf("%d of %d%%                                   ", to, len(*fileContent)))
+		input.SetText(getStatusInformation(fileContent))
 	}
+}
+
+func addGotoWidget(box *tui.Box) {
+	gotoInput := tui.NewTextEdit()
+	gotoInput.SetText("Go to line: ")
+	gotoInput.SetFocused(true)
+	gotoInput.OnTextChanged(func(entry *tui.TextEdit) {
+		gotoLine = entry.Text()
+	})
+	box.Append(gotoInput)
+}
+
+func exists(name string) bool {
+	if _, err := os.Stat(name); os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+
+func saveStatus(fileName string, from, to int) {
+	// write from, to y el nombre del archivo ...
+	homeDir := os.Getenv("HOME")
+	f, err := os.Create(filepath.Join(homeDir, "txtread"))
+	if err != nil {
+		fmt.Fprint(os.Stderr, err.Error())
+		return
+	}
+	defer f.Close()
+	// w := bufio.NewWriter(f)
+	// w.WriteString(fmt.Sprintf("%s|%d|%d", fileName, from, to))
+	f.WriteString(fmt.Sprintf("%s|%d|%d", fileName, from, to))
+}
+
+func getFileNameFromLatest() (string, error) {
+	homeDir := os.Getenv("HOME")
+	latestFilePath := filepath.Join(homeDir, "txtread")
+
+	if !exists(latestFilePath) {
+		return "", fmt.Errorf("'%s' does not exist", latestFilePath)
+	}
+
+	f, err := os.Open(latestFilePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	fileContent, err := ioutil.ReadAll(f)
+	if err != nil {
+		return "", err
+	}
+	latestFileFields := strings.Split(string(fileContent), "|")
+	if len(latestFileFields) != 3 {
+		return "", fmt.Errorf("Wrong format in '%s'", latestFilePath)
+	}
+	return latestFileFields[0], nil
 }
 
 func main() {
 
-	args := os.Args
-	if len(args) != 2 {
+	flag.Parse()
+	fileName := *fileToOpen
+	if fileName == "" && !*openLatestFile {
 		fmt.Fprintln(os.Stderr, "error: missing file to read")
 		os.Exit(1)
 	}
 
-	fileName := os.Args[1]
+	if fileName != "" && *openLatestFile {
+		fmt.Fprintln(os.Stderr, "error: conflicting options")
+		os.Exit(1)
+	}
+
+	var err error
+
+	if *openLatestFile {
+		fileName, err = getFileNameFromLatest()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 	fileContent, err := readLines(fileName)
 	check(err)
 
@@ -182,10 +261,9 @@ func main() {
 	txtReader := tui.NewVBox(txtAreaBox, inputCommandBox)
 	txtReader.SetSizePolicy(tui.Expanding, tui.Expanding)
 
-	someChunk := getChunk(&fileContent, from, to)
-	putText(txtArea, &someChunk)
+	chunk := getChunk(&fileContent, from, to)
+	putText(txtArea, &chunk)
 
-	//root := tui.NewHBox(sidebar, chat)
 	root := tui.NewHBox(txtReader)
 
 	ui, err := tui.New(root)
@@ -196,7 +274,6 @@ func main() {
 	// down ...
 	ui.SetKeybinding("j", addDownBinding(&fileContent, txtArea, inputCommand))
 	ui.SetKeybinding("Down", addDownBinding(&fileContent, txtArea, inputCommand))
-	ui.SetKeybinding("Enter", addDownBinding(&fileContent, txtArea, inputCommand))
 
 	// Up ...
 	ui.SetKeybinding("k", addUpBinding(&fileContent, txtArea, inputCommand))
@@ -204,23 +281,26 @@ func main() {
 
 	// go to:
 	ui.SetKeybinding("g", func() {
-		// root.Append
-		gotoInput := tui.NewTextEdit()
-		gotoInput.SetSizePolicy(tui.Expanding, tui.Expanding)
-		gotoInput.SetText("Goto: ")
-		gotoInput.SetFocused(true)
-		gotoInput.SetWordWrap(true)
-		txtReader.Append(gotoInput)
+		addGotoWidget(txtReader)
 	})
 
 	ui.SetKeybinding("r", func() {
-		txtReader.Remove(2)
+		txtReader.Remove(GotoWidgetIndex)
+		inputCommand.SetText(getStatusInformation(&fileContent))
+	})
+
+	ui.SetKeybinding("s", func() {
+		// save status ...
+		absoluteFilePath, _ := filepath.Abs(fileName)
+		saveStatus(absoluteFilePath, from, to)
 	})
 
 	ui.SetKeybinding("Esc", func() {
 		ui.Quit()
-		fmt.Println("Bye 2 ... ")
+		fmt.Printf("Got in the buffer: [%s]\n", gotoLine)
 	})
+
+	inputCommand.SetText(getStatusInformation(&fileContent))
 
 	if err := ui.Run(); err != nil {
 		log.Fatal(err)
