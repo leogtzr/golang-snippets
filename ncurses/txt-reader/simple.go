@@ -66,7 +66,7 @@ func putText(box *tui.Box, content *[]string) {
 	}
 }
 
-func downText(fileContent *[]string, history *tui.Box) {
+func downText(fileContent *[]string, txtArea *tui.Box) {
 	if from < len(*fileContent) {
 		from++
 	}
@@ -78,10 +78,10 @@ func downText(fileContent *[]string, history *tui.Box) {
 		to++
 	}
 	chunk := getChunk(fileContent, from, to)
-	putText(history, &chunk)
+	putText(txtArea, &chunk)
 }
 
-func upText(fileContent *[]string, history *tui.Box) {
+func upText(fileContent *[]string, txtArea *tui.Box) {
 	if from <= 0 {
 		return
 	}
@@ -93,7 +93,7 @@ func upText(fileContent *[]string, history *tui.Box) {
 	to--
 
 	chunk := getChunk(fileContent, from, to)
-	putText(history, &chunk)
+	putText(txtArea, &chunk)
 }
 
 func needsSemiWrap(line string) bool {
@@ -163,40 +163,30 @@ func main() {
 	// )
 	// sidebar.SetBorder(true)
 
-	history := tui.NewVBox()
-	historyScroll := tui.NewScrollArea(history)
-	historyScroll.SetAutoscrollToBottom(true)
+	txtArea := tui.NewVBox()
+	txtAreaScroll := tui.NewScrollArea(txtArea)
+	txtAreaScroll.SetAutoscrollToBottom(true)
 
-	historyBox := tui.NewVBox(historyScroll)
-	historyBox.SetBorder(true)
+	txtAreaBox := tui.NewVBox(txtAreaScroll)
+	txtAreaBox.SetBorder(true)
 
-	input := tui.NewEntry()
-	input.SetFocused(true)
-	input.SetSizePolicy(tui.Expanding, tui.Maximum)
-	input.SetEchoMode(tui.EchoModeNormal)
+	inputCommand := tui.NewEntry()
+	inputCommand.SetFocused(true)
+	inputCommand.SetSizePolicy(tui.Expanding, tui.Maximum)
+	inputCommand.SetEchoMode(tui.EchoModeNormal)
 
-	inputBox := tui.NewHBox(input)
-	inputBox.SetBorder(true)
-	inputBox.SetSizePolicy(tui.Expanding, tui.Maximum)
+	inputCommandBox := tui.NewHBox(inputCommand)
+	inputCommandBox.SetBorder(true)
+	inputCommandBox.SetSizePolicy(tui.Expanding, tui.Maximum)
 
-	chat := tui.NewVBox(historyBox, inputBox)
-	chat.SetSizePolicy(tui.Expanding, tui.Expanding)
-
-	// input.OnSubmit(func(e *tui.Entry) {
-	// 	history.Append(tui.NewHBox(
-	// 		tui.NewLabel(time.Now().Format("15:04")),
-	// 		tui.NewPadder(1, 0, tui.NewLabel(fmt.Sprintf("<%s>", "john"))),
-	// 		tui.NewLabel(e.Text()),
-	// 		tui.NewSpacer(),
-	// 	))
-	// 	input.SetText("")
-	// })
+	txtReader := tui.NewVBox(txtAreaBox, inputCommandBox)
+	txtReader.SetSizePolicy(tui.Expanding, tui.Expanding)
 
 	someChunk := getChunk(&fileContent, from, to)
-	putText(history, &someChunk)
+	putText(txtArea, &someChunk)
 
 	//root := tui.NewHBox(sidebar, chat)
-	root := tui.NewHBox(chat)
+	root := tui.NewHBox(txtReader)
 
 	ui, err := tui.New(root)
 	if err != nil {
@@ -204,13 +194,13 @@ func main() {
 	}
 
 	// down ...
-	ui.SetKeybinding("j", addDownBinding(&fileContent, history, input))
-	ui.SetKeybinding("Down", addDownBinding(&fileContent, history, input))
-	ui.SetKeybinding("Enter", addDownBinding(&fileContent, history, input))
+	ui.SetKeybinding("j", addDownBinding(&fileContent, txtArea, inputCommand))
+	ui.SetKeybinding("Down", addDownBinding(&fileContent, txtArea, inputCommand))
+	ui.SetKeybinding("Enter", addDownBinding(&fileContent, txtArea, inputCommand))
 
 	// Up ...
-	ui.SetKeybinding("k", addUpBinding(&fileContent, history, input))
-	ui.SetKeybinding("Up", addUpBinding(&fileContent, history, input))
+	ui.SetKeybinding("k", addUpBinding(&fileContent, txtArea, inputCommand))
+	ui.SetKeybinding("Up", addUpBinding(&fileContent, txtArea, inputCommand))
 
 	// go to:
 	ui.SetKeybinding("g", func() {
@@ -220,12 +210,11 @@ func main() {
 		gotoInput.SetText("Goto: ")
 		gotoInput.SetFocused(true)
 		gotoInput.SetWordWrap(true)
-		chat.Append(gotoInput)
+		txtReader.Append(gotoInput)
 	})
 
 	ui.SetKeybinding("r", func() {
-		// fmt.Println(chat.Length())
-		chat.Remove(2)
+		txtReader.Remove(2)
 	})
 
 	ui.SetKeybinding("Esc", func() {
