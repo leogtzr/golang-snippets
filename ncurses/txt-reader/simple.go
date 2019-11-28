@@ -8,14 +8,20 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/marcusolsson/tui-go"
 )
 
-// ADVANCE ...
+// Advance ...
 const Advance int = 30
+
+// WrapMax ...
 const WrapMax = 80
+
+// GotoWidgetIndex ...
 const GotoWidgetIndex = 2
 
 var from = 0
@@ -23,6 +29,13 @@ var to = Advance
 var gotoLine = ""
 var fileToOpen = flag.String("file", "", "File to open")
 var openLatestFile = flag.Bool("latest", false, "Open the latest text file")
+
+// LatestFile ...
+type LatestFile struct {
+	FileName string
+	From     int
+	To       int
+}
 
 func check(e error) {
 	if e != nil {
@@ -134,7 +147,11 @@ func wrap(line string) string {
 }
 
 func getStatusInformation(fileContent *[]string) string {
-	return fmt.Sprintf("%d of %d%%                                   ", to, len(*fileContent))
+	percent := float64(to) * 100.00
+	percent = percent / float64(len(*fileContent))
+	return fmt.Sprintf(".   %d of %d lines (%.3f%%) [%d lines to next percentage point]                                                            ",
+		to,
+		len(*fileContent), percent, linesToChangePercentagePoint(to, len(*fileContent)))
 }
 
 func addUpBinding(fileContent *[]string, box *tui.Box, input *tui.Entry) func() {
@@ -182,28 +199,63 @@ func saveStatus(fileName string, from, to int) {
 	f.WriteString(fmt.Sprintf("%s|%d|%d", fileName, from, to))
 }
 
-func getFileNameFromLatest() (string, error) {
+func getFileNameFromLatest() (LatestFile, error) {
 	homeDir := os.Getenv("HOME")
 	latestFilePath := filepath.Join(homeDir, "txtread")
 
 	if !exists(latestFilePath) {
-		return "", fmt.Errorf("'%s' does not exist", latestFilePath)
+		return LatestFile{}, fmt.Errorf("'%s' does not exist", latestFilePath)
 	}
 
 	f, err := os.Open(latestFilePath)
 	if err != nil {
-		return "", err
+		return LatestFile{}, err
 	}
 	defer f.Close()
 	fileContent, err := ioutil.ReadAll(f)
 	if err != nil {
-		return "", err
+		return LatestFile{}, err
 	}
 	latestFileFields := strings.Split(string(fileContent), "|")
 	if len(latestFileFields) != 3 {
-		return "", fmt.Errorf("Wrong format in '%s'", latestFilePath)
+		return LatestFile{}, fmt.Errorf("Wrong format in '%s'", latestFilePath)
 	}
-	return latestFileFields[0], nil
+	latestFile := LatestFile{}
+	latestFile.FileName = latestFileFields[0]
+	fromInt, _ := strconv.ParseInt(latestFileFields[1], 10, 32)
+	toInt, _ := strconv.ParseInt(latestFileFields[2], 10, 32)
+
+	latestFile.From = int(fromInt)
+	latestFile.To = int(toInt)
+	return latestFile, nil
+}
+
+func getNumberLineGoto(line string) string {
+	reg, err := regexp.Compile("[^0-9]+")
+	if err != nil {
+		return ""
+	}
+	return reg.ReplaceAllString(line, "")
+}
+
+func percent(i, totalLines int) float64 {
+	return float64(i*100.0) / float64(totalLines)
+}
+
+func linesToChangePercentagePoint(currentLine, totalLines int) int {
+	start := currentLine
+	linesToChangePercentage := -1
+	percentageWithCurrentLine := int(percent(currentLine, totalLines))
+	for {
+		currentLine++
+		nextPercentage := int(percent(currentLine, totalLines))
+		if nextPercentage > percentageWithCurrentLine {
+			linesToChangePercentage = currentLine
+			break
+		}
+	}
+
+	return linesToChangePercentage - start
 }
 
 func main() {
@@ -223,7 +275,14 @@ func main() {
 	var err error
 
 	if *openLatestFile {
-		fileName, err = getFileNameFromLatest()
+		latestFile, err := getFileNameFromLatest()
+		from = latestFile.From
+		to = latestFile.To
+
+		fmt.Println(from)
+		fmt.Println(to)
+
+		fileName = latestFile.FileName
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -285,8 +344,21 @@ func main() {
 	})
 
 	ui.SetKeybinding("r", func() {
-		txtReader.Remove(GotoWidgetIndex)
+		// Go to the specified line
 		inputCommand.SetText(getStatusInformation(&fileContent))
+
+		gotoLineNumber := getNumberLineGoto(gotoLine)
+		gotoLineNumberDigits, err := strconv.ParseInt(gotoLineNumber, 10, 64)
+		if err != nil {
+			panic(err)
+		}
+		if int(gotoLineNumberDigits) < (len(fileContent) - Advance) {
+			from = int(gotoLineNumberDigits)
+			to = from + Advance
+			putText(txtArea, &chunk)
+			inputCommand.SetText(getStatusInformation(&fileContent))
+		}
+		txtReader.Remove(GotoWidgetIndex)
 	})
 
 	ui.SetKeybinding("s", func() {
@@ -297,7 +369,6 @@ func main() {
 
 	ui.SetKeybinding("Esc", func() {
 		ui.Quit()
-		fmt.Printf("Got in the buffer: [%s]\n", gotoLine)
 	})
 
 	inputCommand.SetText(getStatusInformation(&fileContent))

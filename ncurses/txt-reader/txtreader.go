@@ -36,6 +36,7 @@ func readLines(path string) ([]string, error) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
+		// fmt.Printf("Line is [%s]\n", line)
 		lines = append(lines, line)
 	}
 	return lines, scanner.Err()
@@ -137,6 +138,13 @@ func main() {
 	// })
 
 	someChunk := getChunk(&fileContent, from, to)
+	// for _, txt := range someChunk {
+	// 	history.Prepend(tui.NewHBox(
+	// 		tui.NewLabel(txt),
+	// 		tui.NewSpacer(),
+	// 	))
+	// }
+	//putText(chat)
 	putText(history, &someChunk)
 
 	root := tui.NewHBox(sidebar, chat)
